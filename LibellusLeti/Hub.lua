@@ -241,6 +241,8 @@ local DPS_FALLBACK_ICONS = {
     ["Diabolical"] = "Interface\\Icons\\Spell_Shadow_ShadowWordDominate",
     ["Bone King"] = "Interface\\Icons\\Ability_Creature_Cursed_05",
     ["Frost Runes"] = "Interface\\Icons\\Spell_Deathknight_EmpowerRuneBlade2",
+    ["March of the Dead"] = "Interface\\Icons\\Spell_Shadow_AnimateDead",
+    march_of_the_dead = "Interface\\Icons\\Spell_Shadow_AnimateDead",
     ["Command: Ghouls"] = "Interface\\Icons\\Spell_Shadow_AnimateDead",
     Melee = "Interface\\Icons\\INV_Sword_04",
     ["Zombie Plague"] = "Interface\\Icons\\Spell_Shadow_CreepingPlague",
@@ -705,6 +707,31 @@ function Hub:PopulateDpsAccordions(page, data, minionW, playerW)
                     acc:AddBodyLine(0, row.iconSpellId, string.format("%d procs this fight", procs), row.label, row.id or row.label, row.iconTexture)
                     if dur > 0 then
                         acc:AddBodyLine(0, nil, string.format("Fight %.0fs · %.1f procs/min", dur, procs * 60 / dur))
+                    end
+                end
+            elseif row.kind == "spell" or ((row.casts or 0) > 0 and row.id == "march_of_the_dead") then
+                local casts = row.casts or 0
+                local dps = row.dps or 0
+                acc:SetHeader(
+                    row.iconSpellId,
+                    string.format(
+                        "%s · %s dmg · %.0f DPS · %d cast%s",
+                        row.label,
+                        fmt(row.damage or 0),
+                        dps,
+                        casts,
+                        casts == 1 and "" or "s"
+                    ),
+                    row.label,
+                    row.id or row.label,
+                    row.iconTexture
+                )
+                if row.sessionNote then
+                    acc:AddBodyLine(0, nil, row.sessionNote)
+                else
+                    acc:AddBodyLine(0, nil, string.format("%d hits · %d target%s", row.hits or 0, row.targetCount or 0, (row.targetCount or 0) == 1 and "" or "s"))
+                    for _, t in ipairs(row.targets or {}) do
+                        acc:AddBodyLine(4, nil, string.format("%s · %s dmg", t.name, fmt(t.damage)))
                     end
                 end
             elseif row.sessionNote then

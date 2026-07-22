@@ -7,7 +7,7 @@ Mancer.DISPLAY_NAME = "Libellus Leti"
 
 -- Embedded so /reload always picks up bumps. Ascension can cache GetAddOnMetadata
 -- across reload, which left the Hub title stuck on an older ## Version.
-local EMBEDDED_VERSION = "0.9.406"
+local EMBEDDED_VERSION = "0.9.434"
 
 -- Prefer embedded version; fall back to toc metadata when present.
 function Mancer.GetVersion()
@@ -242,7 +242,7 @@ end
 
 local ADDON_FOLDER = Mancer.ADDON_FOLDER or "LibellusLeti"
 local ADDON_ROOT = "Interface\\AddOns\\" .. ADDON_FOLDER .. "\\"
-local MANCER_AURA = ADDON_ROOT .. "PowerAurasMedia\\Auras\\"
+local MANCER_AURA = ADDON_ROOT .. "PlayerBarTextures\\Auras\\"
 local WEAKAURAS_AURA = "Interface\\Addons\\WeakAuras\\PowerAurasMedia\\Auras\\"
 
 Mancer.BAR_TEXTURES = {
@@ -289,10 +289,12 @@ function Mancer.NormalizeBarTexturePath(path)
         :gsub("\\AddOns\\", "\\Addons\\")
         :gsub("\\CombatText\\", "\\" .. ADDON_FOLDER .. "\\")
         :gsub("\\RunePulse\\", "\\" .. ADDON_FOLDER .. "\\")
-        :gsub("\\WeakAuras\\PowerAurasMedia\\Auras\\", "\\" .. ADDON_FOLDER .. "\\PowerAurasMedia\\Auras\\")
-        :gsub("\\Addons\\WeakAuras\\PowerAurasMedia\\Auras\\", "\\" .. ADDON_FOLDER .. "\\PowerAurasMedia\\Auras\\")
-        :gsub("\\Mancer\\Media\\Auras\\", "\\" .. ADDON_FOLDER .. "\\PowerAurasMedia\\Auras\\")
-        :gsub("\\LibellusLeti\\Media\\Auras\\", "\\" .. ADDON_FOLDER .. "\\PowerAurasMedia\\Auras\\")
+        :gsub("\\WeakAuras\\PowerAurasMedia\\Auras\\", "\\" .. ADDON_FOLDER .. "\\PlayerBarTextures\\Auras\\")
+        :gsub("\\Addons\\WeakAuras\\PowerAurasMedia\\Auras\\", "\\" .. ADDON_FOLDER .. "\\PlayerBarTextures\\Auras\\")
+        :gsub("\\" .. ADDON_FOLDER .. "\\PowerAurasMedia\\Auras\\", "\\" .. ADDON_FOLDER .. "\\PlayerBarTextures\\Auras\\")
+        :gsub("\\Mancer\\PowerAurasMedia\\Auras\\", "\\" .. ADDON_FOLDER .. "\\PlayerBarTextures\\Auras\\")
+        :gsub("\\Mancer\\Media\\Auras\\", "\\" .. ADDON_FOLDER .. "\\PlayerBarTextures\\Auras\\")
+        :gsub("\\LibellusLeti\\Media\\Auras\\", "\\" .. ADDON_FOLDER .. "\\PlayerBarTextures\\Auras\\")
 
     if path:find("VineStem", 1, true) or path:find("Aura124", 1, true) then
         return MANCER_AURA .. "Aura1"
@@ -300,6 +302,7 @@ function Mancer.NormalizeBarTexturePath(path)
 
     local flatAura = path:match("\\Mancer\\Media\\(Aura%d+)$")
         or path:match("\\LibellusLeti\\Media\\(Aura%d+)$")
+        or path:match("\\PowerAurasMedia\\Auras\\(Aura%d+)$")
     if flatAura then
         path = MANCER_AURA .. flatAura
     end
@@ -362,11 +365,11 @@ function Mancer.GetBarTextureLoadPaths(metaPath)
 
     add(MANCER_AURA .. base)
     add(MANCER_AURA .. base .. ".tga")
-    add(ADDON_ROOT .. "Media\\Auras\\" .. base)
-    add(ADDON_ROOT .. "Media\\Auras\\" .. base .. ".tga")
+    add(ADDON_ROOT .. "PlayerBarTextures\\Auras\\" .. base)
+    add(ADDON_ROOT .. "PlayerBarTextures\\Auras\\" .. base .. ".tga")
     add(ADDON_ROOT .. "PowerAurasMedia\\Auras\\" .. base)
     add(ADDON_ROOT .. "Media\\Auras\\" .. base)
-    add(ADDON_ROOT .. "Media\\" .. base)
+    add(ADDON_ROOT .. "Media\\Auras\\" .. base .. ".tga")
     add(ADDON_ROOT .. "Media\\" .. base)
     add(WEAKAURAS_AURA .. base)
     add("Interface\\AddOns\\WeakAuras\\PowerAurasMedia\\Auras\\" .. base)
@@ -383,6 +386,10 @@ local DEFAULTS = {
     showProcBar = true,
     consolidateBuffs = false,
     showZombieCounter = true,
+    showMinionHpList = false,
+    hideMinionHpNameplateVisuals = true,
+    minionHpListOffset = { x = 90, y = 20 },
+    minionHpBarTextureIndex = 1,
     showRegenRate = true,
     showWhere = "all",
     showWherePlaces = { world = true, raid = true, dungeon = true },
@@ -392,7 +399,7 @@ local DEFAULTS = {
     anchorX = 0,
     anchorY = 80,
     arcRadius = 65,
-    scale = 1.0,
+    scale = 5.0,
     manaColor = { 0.35, 0.65, 1.0 },
     healthColor = { 0.35, 0.95, 0.45 },
     rateColor = { 0.85, 0.85, 0.85 },
@@ -488,6 +495,15 @@ local function MigrateSavedVariables()
         MancerDB.advisorScaleHeight_v282 = true
     end
 
+    -- Default HUD scale → 5 (also raise past old 2.0 mousewheel cap).
+    if not MancerDB.hudScaleDefault_v434 then
+        local s = tonumber(MancerDB.scale)
+        if s == nil or math.abs(s - 1.0) < 0.001 or math.abs(s - 1.25) < 0.001 then
+            MancerDB.scale = 5.0
+        end
+        MancerDB.hudScaleDefault_v434 = true
+    end
+
     -- Where: migrate exclusive string → multi-select places table.
     if type(MancerDB.showWherePlaces) ~= "table" then
         local id = MancerDB.showWhere
@@ -531,6 +547,9 @@ function Mancer:Refresh()
     end
     if self.NecromancerAdvisor then
         self.NecromancerAdvisor:ApplyConfig()
+    end
+    if self.MinionHpHud then
+        self.MinionHpHud:ApplyConfig()
     end
     if Mancer.BuffConsolidateModule and Mancer.BuffConsolidateModule.ApplyConsolidation then
         Mancer.BuffConsolidateModule:ApplyConsolidation()
@@ -598,6 +617,12 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         safeInit("FloatingText", function()
             if not Mancer.FloatingText then
                 Mancer.FloatingText = Mancer.FloatingTextModule:New()
+            end
+        end)
+
+        safeInit("MinionHpHud", function()
+            if Mancer.MinionHpHudModule and not Mancer.MinionHpHud then
+                Mancer.MinionHpHud = Mancer.MinionHpHudModule:New()
             end
         end)
 
@@ -797,6 +822,26 @@ local OPTION_TIPS = {
             "Minion DPS reports also list how many zombies spawned each fight.",
         },
     },
+    showMinionHpList = {
+        title = "Show minion HP bars",
+        lines = {
+            "Shows green→red HP bars for permanent guardians (ghoul, skeletons, rogue, fiend, abom).",
+            "Drag H in Layout move mode to reposition. Use Hide friendly plates if you need pet tokens without plate clutter.",
+        },
+    },
+    minionHpBarTexture = {
+        title = "Minion HP bar",
+        lines = {
+            "Cycles XPerl status-bar skins for minion HP fills (greyscale tinted green→red).",
+        },
+    },
+    hideMinionHpNameplateVisuals = {
+        title = "Hide friendly plates",
+        lines = {
+            "On: turns Friendly/Pets plates on for minion tokens, then hides them (alpha 0).",
+            "Off: restores your plate settings and stops forcing them on — you can turn plates off normally.",
+        },
+    },
     showWhere = {
         title = "Where",
         lines = {
@@ -978,6 +1023,16 @@ function Options:CycleBarTexture(delta)
     end
 end
 
+function Options:CycleMinionHpBarTexture(delta)
+    if not Mancer.MinionHpHud or not Mancer.MinionHpHud.CycleBarTexture then
+        return
+    end
+    local name = Mancer.MinionHpHud:CycleBarTexture(delta)
+    if self.minionHpBarValueText then
+        self.minionHpBarValueText:SetText(name or "?")
+    end
+end
+
 function Options:GetFontIndex()
     local path = Mancer.ResolveFontFile(MancerDB.fontFile)
     for i, font in ipairs(Mancer.FONTS) do
@@ -1046,6 +1101,7 @@ function Options:ResetBarLayout()
     MancerDB.zombieIconScale = 0.85
     MancerDB.procIconScale = 0.8
     MancerDB.advisorTextScale = 1.0
+    MancerDB.minionHpListOffset = { x = 90, y = 20 }
     if Mancer.FloatingText then
         Mancer.FloatingText:SetMoveMode(false)
     end
@@ -1084,6 +1140,12 @@ function Options:SyncControls()
     if self.rowZombieCounter then
         self.rowZombieCounter.checkbox:SetChecked(MancerDB.showZombieCounter ~= false and 1 or nil)
     end
+    if self.rowMinionHpList then
+        self.rowMinionHpList.checkbox:SetChecked(MancerDB.showMinionHpList == true and 1 or nil)
+    end
+    if self.rowHideMinionHpPlates then
+        self.rowHideMinionHpPlates.checkbox:SetChecked(MancerDB.hideMinionHpNameplateVisuals ~= false and 1 or nil)
+    end
 
     if self.rowMinimap then
         local hidden = MancerDB.minimap and MancerDB.minimap.hide
@@ -1097,6 +1159,9 @@ function Options:SyncControls()
 
     if self.barValueText then
         self.barValueText:SetText(Mancer.GetBarTextureName(MancerDB.barTexture))
+    end
+    if self.minionHpBarValueText and Mancer.MinionHpHud and Mancer.MinionHpHud.GetBarTextureName then
+        self.minionHpBarValueText:SetText(Mancer.MinionHpHud:GetBarTextureName())
     end
 
     if self.fontValueText then
@@ -1287,7 +1352,9 @@ function Options:CreatePanel()
     self.rowConsolidateBuffs = CreateCheckboxRow(dispRight, "Stack duplicate buffs", dispRightTop, 0, "consolidateBuffs", 198)
     self.rowProcBar = CreateCheckboxRow(dispRight, "Show proc bar", self.rowConsolidateBuffs, -2, "showProcBar", 198)
     self.rowZombieCounter = CreateCheckboxRow(dispRight, "Show zombie counter", self.rowProcBar, -2, "showZombieCounter", 198)
-    self.rowMinimap = CreateCheckboxRow(dispRight, "Show minimap button", self.rowZombieCounter, -2, "showMinimapButton", 198)
+    self.rowMinionHpList = CreateCheckboxRow(dispRight, "Show minion HP bars", self.rowZombieCounter, -2, "showMinionHpList", 198)
+    self.rowHideMinionHpPlates = CreateCheckboxRow(dispRight, "Hide friendly plates", self.rowMinionHpList, -2, "hideMinionHpNameplateVisuals", 198)
+    self.rowMinimap = CreateCheckboxRow(dispRight, "Show minimap button", self.rowHideMinionHpPlates, -2, "showMinimapButton", 198)
     self.rowMinimap.checkbox:SetScript("OnClick", function(self)
         local show = self:GetChecked() == 1
         if Mancer.MinimapButtonModule then
@@ -1333,7 +1400,28 @@ function Options:CreatePanel()
         Options:CycleBarTexture(1)
     end)
 
-    local fontHeader = CreateSectionLabel(panel, "Font", barPrev, -14)
+    local minionBarHeader = CreateSectionLabel(panel, "Minion HP bar", barPrev, -14)
+    local minionBarPrev = CreateButton(panel, 32, 22, "<", minionBarHeader, 0, -8)
+    minionBarPrev:ClearAllPoints()
+    minionBarPrev:SetPoint("TOPLEFT", minionBarHeader, "BOTTOMLEFT", 0, -8)
+    local minionBarNext = CreateButton(panel, 32, 22, ">", minionBarHeader, 36, -8)
+    minionBarNext:ClearAllPoints()
+    minionBarNext:SetPoint("LEFT", minionBarPrev, "RIGHT", 4, 0)
+
+    self.minionHpBarValueText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    self.minionHpBarValueText:SetPoint("LEFT", minionBarNext, "RIGHT", 12, 0)
+    self.minionHpBarValueText:SetWidth(280)
+    self.minionHpBarValueText:SetJustifyH("LEFT")
+    self.minionHpBarValueText:SetText("Abstract")
+
+    minionBarPrev:SetScript("OnClick", function()
+        Options:CycleMinionHpBarTexture(-1)
+    end)
+    minionBarNext:SetScript("OnClick", function()
+        Options:CycleMinionHpBarTexture(1)
+    end)
+
+    local fontHeader = CreateSectionLabel(panel, "Font", minionBarPrev, -14)
 
     local fontPrev = CreateButton(panel, 32, 22, "<", fontHeader, 0, -8)
     fontPrev:ClearAllPoints()

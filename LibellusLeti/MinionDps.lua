@@ -76,6 +76,19 @@ local PLAYER_TRACKED_SPELLS = {
             [705750] = true,
         },
     },
+    {
+        -- CA 29943 / spell 707007 — player AoE plague CD (damage + cast count).
+        id = "march_of_the_dead",
+        kind = "spell",
+        label = "March of the Dead",
+        names = {
+            ["March of the Dead"] = true,
+            ["march of the dead"] = true,
+        },
+        spellIds = {
+            [707007] = true,
+        },
+    },
 }
 
 local OBJECT_TYPE_PET = 0x00001000
@@ -390,6 +403,7 @@ local function NewPlayerSpellBucket(def)
         damage = 0,
         hits = 0,
         procs = 0,
+        casts = 0,
         activeSeconds = 0,
         peakTargets = 0,
         targets = {},
@@ -463,6 +477,7 @@ local function CopyPlayerSpellBuckets(source)
             damage = row.damage or 0,
             hits = row.hits or 0,
             procs = row.procs or 0,
+            casts = row.casts or 0,
             activeSeconds = row.activeSeconds or 0,
             peakTargets = row.peakTargets or 0,
             targets = targets,
@@ -1271,7 +1286,7 @@ function MinionDps:FlushAllOpenSummons(fight)
 end
 
 function MinionDps:OpenPlayerDotAura(def, destGuid, destName, spellId)
-    if not def or def.kind ~= "dot" or not destGuid then
+    if not def or (def.kind ~= "dot" and def.kind ~= "spell") or not destGuid then
         return
     end
     local fight = self:GetCurrentFight()
@@ -1296,7 +1311,7 @@ function MinionDps:OpenPlayerDotAura(def, destGuid, destName, spellId)
 end
 
 function MinionDps:ClosePlayerDotAura(def, destGuid, destName)
-    if not def or def.kind ~= "dot" or not destGuid then
+    if not def or (def.kind ~= "dot" and def.kind ~= "spell") or not destGuid then
         return
     end
     local fight = self:GetCurrentFight()
@@ -1331,6 +1346,21 @@ function MinionDps:RecordPlayerProc(def, spellId)
     spellBucket.procs = (spellBucket.procs or 0) + 1
 end
 
+function MinionDps:RecordPlayerCast(def, spellId)
+    if not def or def.kind == "proc" then
+        return
+    end
+    local fight = self:GetCurrentFight()
+    if not fight.startedAt then
+        fight.startedAt = GetTimeNow()
+    end
+    local spellBucket = GetPlayerSpellBucket(fight, def)
+    if spellId then
+        spellBucket.spellId = spellId
+    end
+    spellBucket.casts = (spellBucket.casts or 0) + 1
+end
+
 function MinionDps:RecordPlayerSpellDamage(def, amount, destGuid, destName, spellId)
     if not def or not amount or amount <= 0 then
         return
@@ -1346,7 +1376,7 @@ function MinionDps:RecordPlayerSpellDamage(def, amount, destGuid, destName, spel
     spellBucket.damage = (spellBucket.damage or 0) + amount
     spellBucket.hits = (spellBucket.hits or 0) + 1
 
-    if def.kind == "dot" then
+    if def.kind == "dot" or def.kind == "spell" then
         -- Damage ticks also open the window if CLEU missed APPLIED.
         self:OpenPlayerDotAura(def, destGuid or "unknown", destName, spellId)
         local target = GetPlayerTargetBucket(spellBucket, destGuid or "unknown", destName)
@@ -1400,12 +1430,13 @@ function MinionDps:HandlePlayerTrackedEvent(parsed)
         return false
     end
 
-    -- DoTs must come from the player onto enemies.
+    -- DoTs / player spells must come from the player onto enemies.
     if not fromPlayer then
         return false
     end
 
     if eventType == "SPELL_CAST_SUCCESS" then
+        self:RecordPlayerCast(def, parsed.spellId)
         -- Cast success often has no dest; open on current target so uptime still counts.
         local destGuid = parsed.destGUID
         local destName = parsed.destName
@@ -1415,9 +1446,8 @@ function MinionDps:HandlePlayerTrackedEvent(parsed)
         end
         if destGuid and not IsPlayerGuid(destGuid) then
             self:OpenPlayerDotAura(def, destGuid, destName, parsed.spellId)
-            return true
         end
-        return false
+        return true
     end
 
     if eventType == "SPELL_AURA_APPLIED" or eventType == "SPELL_AURA_REFRESH" or eventType == "SPELL_AURA_APPLIED_DOSE" then
@@ -2070,6 +2100,7 @@ function MinionDps:PrintPlayerSpellStats(fight, duration, opts)
         local unitSec = (row.activeSeconds or 0) + openExtra
         local hasData = (row.damage or 0) > 0
             or (row.procs or 0) > 0
+            or (row.casts or 0) > 0
             or unitSec > 0
             or targetCount > 0
         if hasData then
@@ -2102,6 +2133,12 @@ function MinionDps:PrintPlayerSpellStats(fight, duration, opts)
             local parts = {
                 string.format("%s: %s dmg", row.label or "?", self:FormatNumber(row.damage or 0)),
             }
+            if (row.casts or 0) > 0 then
+                table.insert(parts, string.format("%d cast%s", row.casts, row.casts == 1 and "" or "s"))
+            end
+            if (row.damage or 0) > 0 then
+                table.insert(parts, string.format("%.0f DPS", (row.damage or 0) / duration))
+            end
             if entry.targetCount > 0 then
                 table.insert(parts, string.format("%d target%s", entry.targetCount, entry.targetCount == 1 and "" or "s"))
             end
@@ -2112,7 +2149,7 @@ function MinionDps:PrintPlayerSpellStats(fight, duration, opts)
                 table.insert(parts, string.format("peak %d", row.peakTargets))
             end
             if (row.hits or 0) > 0 then
-                table.insert(parts, string.format("%d ticks", row.hits))
+                table.insert(parts, string.format("%d hits", row.hits))
             end
             printFn("  " .. table.concat(parts, " | "))
 
@@ -2634,6 +2671,7 @@ function MinionDps:BuildPlayerAccordionRows(fight, duration, opts)
         local unitSec = (row.activeSeconds or 0) + openExtra
         local hasData = (row.damage or 0) > 0
             or (row.procs or 0) > 0
+            or (row.casts or 0) > 0
             or unitSec > 0
             or targetCount > 0
         if hasData then
@@ -2649,6 +2687,11 @@ function MinionDps:BuildPlayerAccordionRows(fight, duration, opts)
         local bd = b.row.damage or 0
         if ad ~= bd then
             return ad > bd
+        end
+        local ac = a.row.casts or 0
+        local bc = b.row.casts or 0
+        if ac ~= bc then
+            return ac > bc
         end
         return (a.row.procs or 0) > (b.row.procs or 0)
     end)
@@ -2668,6 +2711,8 @@ function MinionDps:BuildPlayerAccordionRows(fight, duration, opts)
             iconTexture = nil,
             damage = row.damage or 0,
             procs = row.procs or 0,
+            casts = row.casts or 0,
+            dps = (row.damage or 0) / duration,
             unitSec = entry.unitSec,
             targetCount = entry.targetCount,
             uptimePct = uptimePct,
@@ -2717,6 +2762,7 @@ function MinionDps:BuildSessionPlayerAccordionRows(fights)
                     damage = 0,
                     hits = 0,
                     procs = 0,
+                    casts = 0,
                     activeSeconds = 0,
                     peakTargets = 0,
                     targetSightings = 0,
@@ -2726,6 +2772,7 @@ function MinionDps:BuildSessionPlayerAccordionRows(fights)
             t.damage = t.damage + (row.damage or 0)
             t.hits = t.hits + (row.hits or 0)
             t.procs = t.procs + (row.procs or 0)
+            t.casts = t.casts + (row.casts or 0)
             t.activeSeconds = t.activeSeconds + (row.activeSeconds or 0)
             if (row.peakTargets or 0) > t.peakTargets then
                 t.peakTargets = row.peakTargets
@@ -2738,7 +2785,7 @@ function MinionDps:BuildSessionPlayerAccordionRows(fights)
 
     local rows = {}
     for _, row in pairs(totals) do
-        if (row.damage or 0) > 0 or (row.procs or 0) > 0 or (row.activeSeconds or 0) > 0 then
+        if (row.damage or 0) > 0 or (row.procs or 0) > 0 or (row.casts or 0) > 0 or (row.activeSeconds or 0) > 0 then
             table.insert(rows, row)
         end
     end
@@ -2746,11 +2793,36 @@ function MinionDps:BuildSessionPlayerAccordionRows(fights)
         if (a.damage or 0) ~= (b.damage or 0) then
             return (a.damage or 0) > (b.damage or 0)
         end
+        if (a.casts or 0) ~= (b.casts or 0) then
+            return (a.casts or 0) > (b.casts or 0)
+        end
         return (a.procs or 0) > (b.procs or 0)
     end)
 
     local out = {}
     for _, row in ipairs(rows) do
+        local sessionNote
+        if row.kind == "proc" then
+            sessionNote = string.format("%d procs (session total)", row.procs or 0)
+        elseif row.kind == "spell" or (row.casts or 0) > 0 then
+            sessionNote = string.format(
+                "%s dmg | %d casts | %d hits | %.1fs unit-sec | %d target-sightings",
+                self:FormatNumber(row.damage or 0),
+                row.casts or 0,
+                row.hits or 0,
+                row.activeSeconds or 0,
+                row.targetSightings or 0
+            )
+        else
+            sessionNote = string.format(
+                "%s dmg | %.1fs unit-sec | peak %d | %d target-sightings | %d ticks",
+                self:FormatNumber(row.damage or 0),
+                row.activeSeconds or 0,
+                row.peakTargets or 0,
+                row.targetSightings or 0,
+                row.hits or 0
+            )
+        end
         local item = {
             id = row.id,
             label = row.label or "?",
@@ -2758,21 +2830,13 @@ function MinionDps:BuildSessionPlayerAccordionRows(fights)
             iconSpellId = self:GetPlayerSpellIconSpellId(row),
             damage = row.damage or 0,
             procs = row.procs or 0,
+            casts = row.casts or 0,
             unitSec = row.activeSeconds or 0,
             targetCount = row.targetSightings or 0,
             uptimePct = nil,
             hits = row.hits or 0,
             targets = {},
-            sessionNote = row.kind == "proc"
-                and string.format("%d procs (session total)", row.procs or 0)
-                or string.format(
-                    "%s dmg | %.1fs unit-sec | peak %d | %d target-sightings | %d ticks",
-                    self:FormatNumber(row.damage or 0),
-                    row.activeSeconds or 0,
-                    row.peakTargets or 0,
-                    row.targetSightings or 0,
-                    row.hits or 0
-                ),
+            sessionNote = sessionNote,
         }
         item.iconTexture = self:ResolvePlayerIconTexture(item, item.iconSpellId)
         table.insert(out, item)
@@ -2874,6 +2938,12 @@ function MinionDps:FormatDpsReportText(data)
             local parts = {
                 string.format("%s: %s dmg", row.label, self:FormatNumber(row.damage or 0)),
             }
+            if (row.casts or 0) > 0 then
+                table.insert(parts, string.format("%d cast%s", row.casts, row.casts == 1 and "" or "s"))
+            end
+            if (row.dps or 0) > 0 or (row.damage or 0) > 0 then
+                table.insert(parts, string.format("%.0f DPS", row.dps or 0))
+            end
             if (row.targetCount or 0) > 0 then
                 table.insert(parts, string.format("%d target%s", row.targetCount, row.targetCount == 1 and "" or "s"))
             end
@@ -2884,7 +2954,7 @@ function MinionDps:FormatDpsReportText(data)
                 table.insert(parts, string.format("%.0f%% of fight", row.uptimePct))
             end
             if (row.hits or 0) > 0 then
-                table.insert(parts, string.format("%d ticks", row.hits))
+                table.insert(parts, string.format("%d hits", row.hits))
             end
             table.insert(playerLines, "  " .. table.concat(parts, " | "))
             for _, t in ipairs(row.targets or {}) do

@@ -6,7 +6,7 @@
 
 ## Author: Mortuus (Discord LtGenZombie)
 
-## Version: 0.9.406
+## Version: 0.9.434
 
 ## SavedVariables: MancerDB
 
@@ -28,6 +28,8 @@ Hub.lua
 Macros.lua
 
 FloatingText.lua
+
+MinionHpHud.lua
 
 RegenTracker.lua
 
@@ -81,19 +83,24 @@ Media\Fonts\ForcedSquare.ttf
 Media\Fonts\AccidentalPresidency.ttf
 Media\Fonts\TrashHand.ttf
 
-PowerAurasMedia\Auras\Aura1.tga
-PowerAurasMedia\Auras\Aura2.tga
-PowerAurasMedia\Auras\Aura3.tga
-PowerAurasMedia\Auras\Aura4.tga
-PowerAurasMedia\Auras\Aura5.tga
-PowerAurasMedia\Auras\Aura6.tga
-PowerAurasMedia\Auras\Aura7.tga
-PowerAurasMedia\Auras\Aura11.tga
-PowerAurasMedia\Auras\Aura16.tga
-PowerAurasMedia\Auras\Aura17.tga
-PowerAurasMedia\Auras\Aura18.tga
-PowerAurasMedia\Auras\Aura23.tga
-PowerAurasMedia\Auras\Aura24.tga
-PowerAurasMedia\Auras\Aura28.tga
-PowerAurasMedia\Auras\Aura33.tga
+PlayerBarTextures\Auras\Aura1.tga
+PlayerBarTextures\Auras\Aura2.tga
+PlayerBarTextures\Auras\Aura3.tga
+PlayerBarTextures\Auras\Aura4.tga
+PlayerBarTextures\Auras\Aura5.tga
+PlayerBarTextures\Auras\Aura6.tga
+PlayerBarTextures\Auras\Aura7.tga
+PlayerBarTextures\Auras\Aura11.tga
+PlayerBarTextures\Auras\Aura16.tga
+PlayerBarTextures\Auras\Aura17.tga
+PlayerBarTextures\Auras\Aura18.tga
+PlayerBarTextures\Auras\Aura23.tga
+PlayerBarTextures\Auras\Aura24.tga
+PlayerBarTextures\Auras\Aura28.tga
+PlayerBarTextures\Auras\Aura33.tga
+
+MinionBarTextures\abstract.blp
+MinionBarTextures\Leaves.blp
+MinionBarTextures\Runes.blp
+MinionBarTextures\static.blp
 

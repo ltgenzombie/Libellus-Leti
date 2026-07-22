@@ -726,6 +726,7 @@ Mancer.AnimationTalentTips = {
         [531131] = "Overwhelming Force",
         [705751] = "Frost Runes",
         [705750] = "Frost Runes",
+        [707007] = "March of the Dead",
         [705752] = "Tears of Lordaeron",
         [705753] = "Tears of Lordaeron",
         [706424] = "Tears of Lordaeron",

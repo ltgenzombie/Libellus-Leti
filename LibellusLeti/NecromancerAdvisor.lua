@@ -1293,7 +1293,8 @@ function Advisor:IsTrustedSummonSource(source)
 end
 
 -- Seed activeSummons from visible guardian units (CLEU SPELL_SUMMON is often silent on Ascension).
--- Friendly nameplates must be on (nameplateShowFriends + nameplateShowFriendlyGuardians).
+-- Friendly nameplates must be on on Ascension (master switch for pet plates).
+-- Pets + Guardians CVars are also enabled. Do not force nameplateShowAll off.
 -- On Ascension, nameplate tokens often fail UnitExists / UnitPlayerControlled while UnitName+GUID still work.
 -- Ascension UnitGUID dumps: 0xF13000C39C… = Skeletal Archer, 0xF13000C490… = Tomb King,
 -- 0xF13000C399… = Ghoul (50073).

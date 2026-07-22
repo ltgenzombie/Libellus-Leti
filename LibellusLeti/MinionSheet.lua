@@ -17,18 +17,19 @@ local DISPLAY_CREATURE_ID = {
     tomb_king = 50320, -- Animate: Tomb King (GUID 0xF13000C490…)
     banshee = 500650, -- Raise: Banshee summon creature
 }
-local NAMEPLATE_HINT = "Friendly nameplates enabled while this sheet is open"
+local NAMEPLATE_HINT = "Friendly plates on for pet tokens (visuals hidden)"
 local WAIT_HINT = "Waiting a few seconds for the guardian scan"
 -- Saved on open and restored on close so live stats work without manual Shift+V.
+-- Ascension: Friends is master switch for pets. Do NOT force nameplateShowAll off.
 local NAMEPLATE_BOOST_CVARS = {
-    "nameplateShowAll",
     "nameplateShowFriends",
     "nameplateShowFriendlyGuardians",
+    "nameplateShowFriendlyPets",
 }
 local NAMEPLATE_ENABLE_VALUES = {
-    nameplateShowAll = "1",
     nameplateShowFriends = "1",
     nameplateShowFriendlyGuardians = "1",
+    nameplateShowFriendlyPets = "1",
 }
 
 
@@ -105,7 +106,19 @@ local function InvalidateAdvisorScan()
 end
 
 function MinionSheet:BoostNameplates()
-    if self.nameplateCvarBackup or not SetCVar then
+    if not SetCVar then
+        return
+    end
+    if self.nameplateCvarBackup then
+        for key, enable in pairs(NAMEPLATE_ENABLE_VALUES) do
+            local ok, cur = pcall(GetCVar, key)
+            if ok and cur ~= nil and enable ~= nil and tostring(cur) ~= tostring(enable) then
+                pcall(SetCVar, key, enable)
+            end
+        end
+        if Mancer.MinionHpHud and Mancer.MinionHpHud.ApplyNameplateVisualHide then
+            Mancer.MinionHpHud:ApplyNameplateVisualHide()
+        end
         return
     end
     local backup = {}
@@ -116,7 +129,7 @@ function MinionSheet:BoostNameplates()
             if ok and val ~= nil then
                 backup[key] = val
                 local enable = NAMEPLATE_ENABLE_VALUES[key]
-                if enable then
+                if enable ~= nil and tostring(val) ~= tostring(enable) then
                     pcall(SetCVar, key, enable)
                 end
             end
@@ -125,6 +138,10 @@ function MinionSheet:BoostNameplates()
     if next(backup) then
         self.nameplateCvarBackup = backup
         InvalidateAdvisorScan()
+        -- Keep tokens on; optionally hide your owned plate visuals (shared with HP HUD).
+        if Mancer.MinionHpHud and Mancer.MinionHpHud.ApplyNameplateVisualHide then
+            Mancer.MinionHpHud:ApplyNameplateVisualHide()
+        end
     end
 end
 
@@ -138,6 +155,10 @@ function MinionSheet:RestoreNameplates()
     end
     self.nameplateCvarBackup = nil
     InvalidateAdvisorScan()
+    -- Minion HP HUD may still need friendly/guardian plates while its feature is on.
+    if Mancer.MinionHpHud and Mancer.MinionHpHud.SyncNameplateSupport then
+        Mancer.MinionHpHud:SyncNameplateSupport()
+    end
 end
 
 function MinionSheet:GetTypeRoster(force)
@@ -172,42 +193,16 @@ end
 -- Nameplate tokens often refresh UnitHealth after Bone Ward / temp HP before UnitHealthMax.
 -- Prefer the highest Max seen for the same GUID; never show current > max.
 local function ReadUnitHealth(unit)
+    if Mancer.Util and Mancer.Util.ReadUnitHealth then
+        return Mancer.Util.ReadUnitHealth(unit)
+    end
     local health = tonumber(UnitHealth and UnitHealth(unit)) or 0
     local healthMax = tonumber(UnitHealthMax and UnitHealthMax(unit)) or 0
-    local guid = UnitGUID and UnitGUID(unit)
-
-    if guid and UnitHealthMax then
-        local function consider(token)
-            if not token or not UnitName or not UnitName(token) then
-                return
-            end
-            if not GuidsMatchSafe(UnitGUID(token), guid) then
-                return
-            end
-            local maxHp = tonumber(UnitHealthMax(token)) or 0
-            if maxHp > healthMax then
-                healthMax = maxHp
-            end
-            local cur = tonumber(UnitHealth and UnitHealth(token)) or 0
-            if cur > health then
-                health = cur
-            end
-        end
-
-        for _, token in ipairs({ "target", "mouseover", "focus", "pet" }) do
-            consider(token)
-        end
-        for i = 1, 40 do
-            consider("nameplate" .. i)
-        end
-    end
-
     if healthMax < 1 and health > 0 then
         healthMax = health
     elseif health > healthMax then
         healthMax = health
     end
-
     return health, healthMax
 end
 

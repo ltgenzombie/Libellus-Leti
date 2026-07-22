@@ -37,6 +37,27 @@ PaperMath.SEPULCHRAL_HP_PER_STAM = 14
 -- WotLK white-swing model: 1 AP ≈ 1 DPS / 14.
 PaperMath.AP_PER_DPS = 14
 
+-- Creature base main-hand swing (seconds). Live UnitAttackSpeed preferred when > 0.
+-- Crypt Fiend base measured in-game at 1.64s (user).
+PaperMath.MINION_BASE_SWING = {
+    crypt_fiend = 1.64,
+}
+
+-- Undead *melee* haste sources (not Mindless Fury — that buffs your casts).
+-- Depravity: Spell.dbc bp=4 → tip +5%. Unholy Frenzy: army +30% for 15s.
+-- Army of the Dead: +10% is ghoul-tagged in tips — omit from fiend defaults.
+PaperMath.MINION_MELEE_HASTE = {
+    depravity = 0.05,
+    unholyFrenzy = 0.30,
+    armyOfTheDead = 0.10,
+}
+
+-- Mortuus Crypt Fiend naked MH damage (0 gear) — used for theoretical white DPS.
+PaperMath.CRYPT_FIEND_NAKED_DAMAGE = {
+    min = 36.2,
+    max = 39.7,
+}
+
 -- Raise: Ghoul tooltip scripts (Ascension description — not classic EffectMultipleValue).
 -- Auto heal on ghoul autos uses spell 707000 bases; Command uses spell 801514.
 -- DBC bases extracted from Ascension Spell.dbc (WDBX/WotLK layout, Effect @ field 71).
@@ -395,6 +416,20 @@ function PaperMath:ScanArmySheets()
         if not sheet.minionId and Advisor and Advisor.ClassifyMinionName then
             sheet.minionId = Advisor:ClassifyMinionName(sheet.name)
         end
+        -- Fallback: creature base swing when UnitAttackSpeed is 0/missing.
+        if (not sheet.attackSpeed or sheet.attackSpeed <= 0)
+            and sheet.minionId
+            and self.MINION_BASE_SWING
+            and self.MINION_BASE_SWING[sheet.minionId]
+        then
+            local base = self.MINION_BASE_SWING[sheet.minionId]
+            sheet.attackSpeed = base
+            local avg = ((sheet.damageMin or 0) + (sheet.damageMax or 0)) / 2
+            if avg > 0 and base > 0 then
+                sheet.paperAutoDps = avg / base
+                sheet.paperAutoDpsWithCrit = sheet.paperAutoDps * (1 + (sheet.critChance or 0) / 100)
+            end
+        end
         table.insert(rows, sheet)
     end
 
@@ -528,6 +563,90 @@ function PaperMath:SummarizeArmy(rows)
         unitCount = #rows,
         extrapolated = extrapolated,
     }
+end
+
+--- Compound haste: swing = base / Π(1+h_i). Returns seconds.
+function PaperMath:EstimateSwingSpeed(baseSpeed, hasteFractions)
+    baseSpeed = tonumber(baseSpeed) or 0
+    if baseSpeed <= 0 then
+        return 0
+    end
+    local mult = 1
+    for _, h in ipairs(hasteFractions or {}) do
+        local f = tonumber(h) or 0
+        if f > 0 then
+            mult = mult * (1 + f)
+        end
+    end
+    if mult <= 0 then
+        return baseSpeed
+    end
+    return baseSpeed / mult
+end
+
+--- Crypt Fiend white-swing table (base 1.64s). Optional live dmgMin/dmgMax override naked dump.
+function PaperMath:GetCryptFiendSwingTable(dmgMin, dmgMax)
+    local base = (self.MINION_BASE_SWING and self.MINION_BASE_SWING.crypt_fiend) or 1.64
+    local naked = self.CRYPT_FIEND_NAKED_DAMAGE or { min = 36.2, max = 39.7 }
+    dmgMin = tonumber(dmgMin) or naked.min
+    dmgMax = tonumber(dmgMax) or naked.max
+    local avg = (dmgMin + dmgMax) / 2
+    local H = self.MINION_MELEE_HASTE or {}
+    local dep = H.depravity or 0.05
+    local uf = H.unholyFrenzy or 0.30
+    -- UF uptime ≈ 15/180 → ~2.5% average haste while talented.
+    local ufAvg = uf * (15 / 180)
+
+    local function row(label, hastes)
+        local speed = self:EstimateSwingSpeed(base, hastes)
+        return {
+            label = label,
+            speed = speed,
+            avgDps = speed > 0 and (avg / speed) or 0,
+            maxDps = speed > 0 and (dmgMax / speed) or 0,
+            minDps = speed > 0 and (dmgMin / speed) or 0,
+            swingsPerMin = speed > 0 and (60 / speed) or 0,
+        }
+    end
+
+    return {
+        baseSpeed = base,
+        damageMin = dmgMin,
+        damageMax = dmgMax,
+        damageAvg = avg,
+        profiles = {
+            row("Base (no melee haste)", {}),
+            row("Typical (Depravity)", { dep }),
+            row("Average (Dep + UF uptime)", { dep, ufAvg }),
+            row("Max burst (Dep + Unholy Frenzy)", { dep, uf }),
+        },
+        note = "AotD +10% is ghoul-tagged — not in fiend table. Mindless Fury is player cast haste, not minion swing.",
+    }
+end
+
+function PaperMath:PrintCryptFiendSwingTable(army)
+    local dmgMin, dmgMax
+    local bucket = army and army.byType and army.byType.crypt_fiend
+    if bucket and bucket.sheets and bucket.sheets[1] then
+        local s = bucket.sheets[1]
+        if (s.damageMin or 0) > 0 then
+            dmgMin, dmgMax = s.damageMin, s.damageMax
+        end
+    end
+    local t = self:GetCryptFiendSwingTable(dmgMin, dmgMax)
+    Mancer.Print(string.format(
+        "--- Crypt Fiend swing (base %.2fs | MH %.0f–%.0f) ---",
+        t.baseSpeed, t.damageMin, t.damageMax
+    ))
+    for _, p in ipairs(t.profiles or {}) do
+        Mancer.Print(string.format(
+            "  %s: %.2fs  |  avg white ≈%.1f DPS  |  max hit ≈%.1f DPS  |  %.1f swings/min",
+            p.label, p.speed, p.avgDps, p.maxDps, p.swingsPerMin
+        ))
+    end
+    if t.note then
+        Mancer.Print("  " .. t.note)
+    end
 end
 
 function PaperMath:EstimateSpellHit(baseDamage, schoolId)
@@ -859,6 +978,8 @@ function PaperMath:PrintReport()
     Mancer.Print("Ghoul Command = tip scripts; ghoul/wraith whites = HYPOTHESIS shared inherit (0.882 AP).")
     Mancer.Print("Minion paper auto DPS = UnitDamage ÷ UnitAttackSpeed (includes their AP).")
     Mancer.Print(string.format("AP/14 check: 1 AP ≈ %.3f white DPS (WotLK model).", 1 / self.AP_PER_DPS))
+    Mancer.Print("")
+    self:PrintCryptFiendSwingTable(army)
     Mancer.Print("")
 
     Mancer.Print("--- Player ---")

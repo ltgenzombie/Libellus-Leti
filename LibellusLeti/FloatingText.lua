@@ -11,7 +11,7 @@ local SCALE_HANDLE_PROGRESS = 1.0
 local SCALE_HANDLE_RADIUS_MULT = 1.12
 local HANDLE_SIZE = 22
 local MIN_SCALE = 0.5
-local MAX_SCALE = 2.0
+local MAX_SCALE = 5.0
 local ADVISOR_ICON_BASE_SIZE = 36
 local ADVISOR_ICON_GAP = 6
 local ADVISOR_ICON_PULSE_SPEED = 2.2
@@ -49,16 +49,22 @@ local PROC_DEFAULT_OFFSET = { x = -56, y = -40 }
 
 -- SecureActionButtonTemplate protects the button AND its parent. Check before any
 -- SetSize/SetPoint/Show/Hide on the A-strip (must be declared before methods that use it).
+-- Ascension: InCombatLockdown can be false a beat before secure edits are allowed.
+-- Never speculative-pcall protected methods — a blocked call still prints the addon error.
 local function IsCombatLocked()
-    return InCombatLockdown and InCombatLockdown()
+    if InCombatLockdown and InCombatLockdown() then
+        return true
+    end
+    if UnitAffectingCombat and UnitAffectingCombat("player") then
+        return true
+    end
+    return false
 end
 
 local function CanTouchAnimateStrip()
     return not IsCombatLocked()
 end
 
--- Ascension can fire PLAYER_REGEN_ENABLED a tick before protected frames unlock.
--- Never call ClearAllPoints/SetPoint/SetSize/Show/Hide on protected frames until safe.
 local function SafeProtectedCall(frame, method, ...)
     if not frame or not method or IsCombatLocked() then
         return false
@@ -67,9 +73,10 @@ local function SafeProtectedCall(frame, method, ...)
     if type(fn) ~= "function" then
         return false
     end
-    -- pcall so Ascension lockdown races don't throw; still skip when locked above.
-    local ok = pcall(fn, frame, ...)
-    return ok and true or false
+    -- Direct call only when unlocked. Do not pcall-probe — Ascension still emits
+    -- "AddOn prevented … ClearAllPoints()" for blocked attempts inside pcall.
+    fn(frame, ...)
+    return true
 end
 
 local function CreateFontString(parent, fontSize)
@@ -316,7 +323,7 @@ function FloatingText:New()
     self.helpBoxText:SetJustifyV("MIDDLE")
     self.helpBoxText:SetTextColor(1, 0.9, 0.55, 1)
     self.helpBoxText:SetText(
-        "Drag letter handles to move panels.\n"
+        "Drag letter handles to move panels (T/A/Z/P/H/B).\n"
             .. "Mousewheel on a handle scales it (except bars).\n"
             .. "Use the yellow squares to move and resize the bars."
     )
@@ -469,8 +476,9 @@ function FloatingText:New()
         self:StopAdvisorInteraction()
     end)
 
-    -- Animate-ready strip (own movable A handle).
-    self.animateReady = CreateFrame("Frame", nil, self.anchor)
+    -- Animate-ready strip. Named so taint reports aren't "<unnamed>".
+    -- Parented to A-handle after handle exists so drag never ClearAllPoints this frame.
+    self.animateReady = CreateFrame("Frame", "MancerAnimateReady", self.anchor)
     self.animateReady:SetSize(1, 1)
     self.animateReady:Hide()
     self.animateReady:EnableMouse(false)
@@ -628,6 +636,18 @@ function FloatingText:New()
     SetSolidTexture(self.animateHandleBg, 0.95, 0.55, 0.25, 0.95)
     if self.animateHandleBg.SetDrawLayer then
         self.animateHandleBg:SetDrawLayer("BACKGROUND", 0)
+    end
+
+    -- Anchor strip to main HUD (not A-handle). The handle is hidden outside move mode;
+    -- parenting the strip to it made Animate icons vanish. Relative SetPoint to the
+    -- handle still follows drag without ClearAllPoints on every move.
+    if self.animateReady and CanTouchAnimateStrip() then
+        self.animateReady:SetParent(self.anchor)
+        self.animateReady:ClearAllPoints()
+        self.animateReady:SetPoint("BOTTOM", self.animateHandle, "TOP", 0, 4)
+        self._animateReadyAnchored = true
+    else
+        self.pendingAnimateStripAnchor = true
     end
 
     -- Harvest Plague zombie counter (own movable Z handle).
@@ -879,7 +899,35 @@ function FloatingText:EnsureArcGuides()
     end
 end
 
+function FloatingText:EnsureAnimateReadyAnchored()
+    if not self.animateReady or not self.animateHandle or not self.anchor then
+        return false
+    end
+    if not CanTouchAnimateStrip() then
+        self.pendingAnimateStripAnchor = true
+        return false
+    end
+    -- Keep parent = HUD anchor so the strip stays visible while A-handle is hidden.
+    if self.animateReady:GetParent() ~= self.anchor then
+        self.animateReady:SetParent(self.anchor)
+        self._animateReadyAnchored = false
+    end
+    if self._animateReadyAnchored then
+        return true
+    end
+    self.animateReady:ClearAllPoints()
+    self.animateReady:SetPoint("BOTTOM", self.animateHandle, "TOP", 0, 4)
+    self._animateReadyAnchored = true
+    self.pendingAnimateStripAnchor = nil
+    return true
+end
+
 function FloatingText:ApplyAdvisorLayout()
+    -- Secure Animate strip follows A-handle; never re-ClearAllPoints it on every layout.
+    if not self._animateReadyAnchored then
+        self:EnsureAnimateReadyAnchored()
+    end
+
     MancerDB.advisorTextOffset = MancerDB.advisorTextOffset or { x = 0, y = 28 }
     MancerDB.animateBarOffset = MancerDB.animateBarOffset or {
         x = ANIMATE_DEFAULT_OFFSET.x,
@@ -949,17 +997,11 @@ function FloatingText:ApplyAdvisorLayout()
     end
 
     if self.animateReady then
-        -- Icons sit above A (same pattern as Z), so the orange handle plate stays visible.
-        if CanTouchAnimateStrip() then
-            SafeProtectedCall(self.animateReady, "ClearAllPoints")
-            SafeProtectedCall(self.animateReady, "SetPoint", "BOTTOM", self.animateHandle or self.anchor, "TOP", 0, 4)
-            if self.animateReady.SetFrameLevel then
-                self.animateReady:SetFrameLevel(
-                    (self.animateHandle and self.animateHandle:GetFrameLevel() or self.anchor:GetFrameLevel()) + 2
-                )
-            end
-        else
-            self.pendingAnimateStripAnchor = true
+        -- Icons sit above A; strip is parented to the handle (no ClearAllPoints here).
+        if self.animateReady.SetFrameLevel and CanTouchAnimateStrip() then
+            self.animateReady:SetFrameLevel(
+                (self.animateHandle and self.animateHandle:GetFrameLevel() or self.anchor:GetFrameLevel()) + 2
+            )
         end
     end
 
@@ -1568,15 +1610,23 @@ function FloatingText:SetAnimateStripShown(shown)
         return
     end
     shown = shown and true or false
+    if shown then
+        self:EnsureAnimateReadyAnchored()
+    end
     if not CanTouchAnimateStrip() then
         self.pendingAnimateStripShown = shown
         return
     end
-    self.pendingAnimateStripShown = nil
+    local ok
     if shown then
-        SafeProtectedCall(self.animateReady, "Show")
+        ok = SafeProtectedCall(self.animateReady, "Show")
     else
-        SafeProtectedCall(self.animateReady, "Hide")
+        ok = SafeProtectedCall(self.animateReady, "Hide")
+    end
+    if ok then
+        self.pendingAnimateStripShown = nil
+    else
+        self.pendingAnimateStripShown = shown
     end
 end
 
@@ -1619,12 +1669,10 @@ function FloatingText:LayoutAnimateIcons(iconCount)
                     startX + ((i - 1) * (size + gap)),
                     0
                 )
-                -- visual is a child of the secure button → also protected.
-                if slot.visual then
-                    SafeProtectedCall(slot.visual, "SetAllPoints", slot.frame)
-                    if slot.visual.SetScale then
-                        slot.visual:SetScale(1)
-                    end
+                -- visual already SetAllPoints at create — never SetAllPoints again
+                -- (it ClearAllPoints an unnamed child and taints on Ascension races).
+                if slot.visual and slot.visual.SetScale then
+                    slot.visual:SetScale(1)
                 end
             end
             if slot.timer then
@@ -1728,12 +1776,29 @@ function FloatingText:EnsureAnimateSecureListener()
             if IsCombatLocked() then
                 return
             end
-            -- Wait a short beat so ClearAllPoints/SetSize are legal on protected parents.
-            if self.elapsed < 0.05 then
+            -- Wait until player is fully out of combat (Ascension lag after REGEN_ENABLED).
+            if self.elapsed < 0.2 then
+                return
+            end
+            if IsCombatLocked() then
                 return
             end
             self:SetScript("OnUpdate", nil)
             FloatingText:FlushPendingAnimateSpellBinds()
+            if FloatingText.pendingAnimateStripShown ~= nil
+                or FloatingText.pendingAnimateStripAnchor
+                or FloatingText.pendingAnimateLayoutCount
+            then
+                local retry = 0
+                frame:SetScript("OnUpdate", function(self2, e2)
+                    retry = retry + (e2 or 0)
+                    if IsCombatLocked() or retry < 0.25 then
+                        return
+                    end
+                    self2:SetScript("OnUpdate", nil)
+                    FloatingText:FlushPendingAnimateSpellBinds()
+                end)
+            end
         end)
     end)
 end
@@ -1813,11 +1878,10 @@ function FloatingText:FlushPendingAnimateSpellBinds()
         end
     end
 
-    if self.pendingAnimateStripAnchor or self.animateReady then
+    if self.pendingAnimateStripAnchor and self.animateReady then
         self.pendingAnimateStripAnchor = nil
-        if self.animateReady and CanTouchAnimateStrip() then
-            SafeProtectedCall(self.animateReady, "ClearAllPoints")
-            SafeProtectedCall(self.animateReady, "SetPoint", "BOTTOM", self.animateHandle or self.anchor, "TOP", 0, 4)
+        if not self:EnsureAnimateReadyAnchored() then
+            self.pendingAnimateStripAnchor = true
         end
     end
 
@@ -2357,14 +2421,7 @@ function FloatingText:UpdateAnimatePositionFromCursor()
 
     self.animateHandle:ClearAllPoints()
     self.animateHandle:SetPoint("CENTER", self.anchor, "CENTER", x, y)
-    if self.animateReady then
-        if CanTouchAnimateStrip() then
-            SafeProtectedCall(self.animateReady, "ClearAllPoints")
-            SafeProtectedCall(self.animateReady, "SetPoint", "BOTTOM", self.animateHandle, "TOP", 0, 4)
-        else
-            self.pendingAnimateStripAnchor = true
-        end
-    end
+    -- animateReady is parented to animateHandle — no ClearAllPoints while dragging.
 end
 
 function FloatingText:UpdateZombiePositionFromCursor()
@@ -2532,6 +2589,15 @@ function FloatingText:SetMoveMode(enabled)
     self:StopProcInteraction()
     self:StopBarInteraction()
     self:StopHelpInteraction()
+    -- Recover Animate strip if a prior secure-parent mistake hid it under A-handle.
+    self._animateReadyAnchored = false
+    self:EnsureAnimateReadyAnchored()
+    if self.pendingAnimateStripShown ~= nil or self.pendingAnimateLayoutCount then
+        self:FlushPendingAnimateSpellBinds()
+    end
+    if Mancer.MinionHpHud and Mancer.MinionHpHud.SetMoveMode then
+        Mancer.MinionHpHud:SetMoveMode(enabled)
+    end
     self.dragHandle:EnableMouse(enabled)
     if self.barHandle then
         self.barHandle:EnableMouse(enabled)
