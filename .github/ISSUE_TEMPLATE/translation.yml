@@ -1,0 +1,113 @@
+name: Translation error
+description: Report incorrect grammar, wording, or tone in a translated string.
+title: "[Translation]: "
+labels: ["translation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping polish Libellus Leti in other languages.
+        Spell and talent names from Ascension do not need translation reports.
+
+  - type: dropdown
+    id: locale
+    attributes:
+      label: Language
+      options:
+        - Deutsch (deDE)
+        - Français (frFR)
+        - Русский (ruRU)
+        - English (enUS)
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Libellus Leti version
+      description: Shown in the Hub title, or in `LibellusLeti.toc` as `## Version`.
+      placeholder: e.g. 0.9.443
+    validations:
+      required: true
+
+  - type: input
+    id: english-word
+    attributes:
+      label: English text
+      description: The English source string (what it should mean).
+      placeholder: e.g. Show mana ticks
+    validations:
+      required: true
+
+  - type: input
+    id: current-translation
+    attributes:
+      label: What it currently is
+      description: The wrong or awkward translation you see in-game.
+      placeholder: e.g. Manazahlen anzeigen
+    validations:
+      required: true
+
+  - type: input
+    id: suggested-translation
+    attributes:
+      label: Suggested translation
+      description: Your corrected wording (grammar, punctuation, tone).
+      placeholder: e.g. Manazeichen anzeigen
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it appear?
+      options:
+        - Minimap button / right-click menu
+        - Language settings window
+        - Display settings window
+        - Hub section tabs (Combat / Minions / Guides / Setup / Credits)
+        - Hub page content
+        - Spell / minion tooltip
+        - Chat message
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: where-detail
+    attributes:
+      label: More detail on where it appears
+      description: Steps to find it, screenshot, or menu path.
+      placeholder: |
+        1. Right-click minimap button
+        2. Open Display
+        3. Hover / read the “Where” section…
+    validations:
+      required: false
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What’s wrong?
+      description: Grammar, wrong meaning, odd tone, typo, punctuation, etc.
+      placeholder: e.g. Sounds too literal / wrong gender / unnatural for UI labels
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshot (optional)
+      description: Drag and drop an image showing the bad string in context.
+      placeholder: (optional)
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for a duplicate translation report
+          required: true
+        - label: This is about addon UI text (not Ascension spell/talent names)
+          required: true
