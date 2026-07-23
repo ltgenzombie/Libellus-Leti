@@ -95,7 +95,7 @@ body:
           required: true
         - label: I am on the latest release (or noted my version above)
           required: true
-        - label: Only one copy of LibellusLeti is in Interface/AddOns (no leftover Mancer folder)
+        - label: Only one copy of LibellusLeti is in Interface/AddOns
           required: false
 
   - type: textarea
