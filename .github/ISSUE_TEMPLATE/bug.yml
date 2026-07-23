@@ -1,0 +1,106 @@
+name: Bug report
+description: Something is broken, wrong, or crashing.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. The more detail you give, the faster we can fix it.
+
+  - type: input
+    id: version
+    attributes:
+      label: Libellus Leti version
+      description: Shown in the Hub title, or in `LibellusLeti.toc` as `## Version`.
+      placeholder: e.g. 0.9.440
+    validations:
+      required: true
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client / realm
+      options:
+        - Ascension (3.3.5a)
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: character
+    attributes:
+      label: Class / spec (if relevant)
+      description: e.g. Animation Necromancer, or leave blank if not relevant.
+      placeholder: Animation Necromancer
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Short description of the bug.
+      placeholder: When I open the Hub and click Minions, the sheet is blank…
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: The Minion Sheet should open with model and stats…
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps help a lot.
+      placeholder: |
+        1. /leti
+        2. Click Minions on the SECTIONS rail
+        3. …
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: ui-errors
+    attributes:
+      label: UI errors (Bugsack / !BugGrabber / chat)
+      description: Paste the full error text if you have it. Leave blank if none.
+      placeholder: |
+        Message: ...
+        Time: ...
+        Count: ...
+        Stack: ...
+      render: lua
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots / video
+      description: Drag and drop images or video into this box, or paste links.
+      placeholder: (optional)
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for a duplicate
+          required: true
+        - label: I am on the latest release (or noted my version above)
+          required: true
+        - label: Only one copy of LibellusLeti is in Interface/AddOns (no leftover Mancer folder)
+          required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Other addons that might conflict, recent changes, etc.
+      placeholder: (optional)
