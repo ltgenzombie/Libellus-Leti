@@ -1,0 +1,73 @@
+name: Feature request
+description: Suggest an improvement or new feature.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem you’re trying to solve, not just the solution.
+
+  - type: input
+    id: version
+    attributes:
+      label: Libellus Leti version you’re on
+      description: Optional, but helpful if this relates to current behavior.
+      placeholder: e.g. 0.9.440
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Hub / UI
+        - Arc bars / floating text
+        - Minion advisor / Animate bar
+        - Minion HP bars
+        - Minion DPS / tooltips
+        - Talent route / overlay
+        - Buff stacking
+        - Setup / options
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What’s painful or missing today?
+      placeholder: I Would like the ability to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like?
+      description: Your ideal behavior, as concrete as possible.
+      placeholder: I would like the HUD/Menu to have an option for A/B for dealing with X/Y
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you’ve considered
+      description: Other approaches, or “none”.
+      placeholder: (optional)
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Mockups / screenshots
+      description: Drag and drop images into this box, or paste links. Optional but great for UI ideas.
+      placeholder: (optional)
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for a similar request
+          required: true
